@@ -196,52 +196,29 @@
   }
 
   // ---------- world map ----------
-  // Libraries and the Natural Earth 1:110m atlas load from jsDelivr after the list
-  // is shown. If they fail, the map card stays hidden and the rest still works.
-  const CDN = "https://cdn.jsdelivr.net/npm/";
-  const loadScript = src => new Promise((ok, no) => {
-    const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = no; document.head.appendChild(s);
-  });
+  // No map library and nothing from third-party servers: scripts/build_map.py projects
+  // Natural Earth 1:110m (kept in vendor/) into ready-made SVG paths in data/map.json.
   const Map2 = {
-    ready: false, feats: {}, pos: {}, z: { k: 1, x: 0, y: 0 }, W: 960, H: 500,
+    ready: false, pos: {}, z: { k: 1, x: 0, y: 0 }, W: 960, H: 420,
     async init() {
       try {
-        await loadScript(CDN + "d3-array@3.2.4/dist/d3-array.min.js");
-        await loadScript(CDN + "d3-geo@3.1.1/dist/d3-geo.min.js");
-        await loadScript(CDN + "topojson-client@3.1.0/dist/topojson-client.min.js");
-        const atlas = await (await fetch(CDN + "world-atlas@2.0.2/countries-110m.json")).json();
-        this.draw(atlas);
+        const m = await (await fetch("data/map.json?v=5")).json();
+        this.draw(m);
         this.ready = true;
         $("#mapcard").hidden = false;
         this.update();
-      } catch (e) { /* map is optional */ }
+      } catch (e) { /* map is optional; the list works without it */ }
     },
-    draw(atlas) {
+    draw(m) {
       const svg = $("#map");
-      const land = topojson.feature(atlas, atlas.objects.countries).features.filter(f => f.properties.name !== "Antarctica");
-      // fit to the land (not the whole globe) so there is no empty band where Antarctica would be
-      const proj = d3.geoNaturalEarth1().fitWidth(this.W - 8, { type: "FeatureCollection", features: land });
-      const path = d3.geoPath(proj);
-      const [[, y0], [, y1]] = path.bounds({ type: "FeatureCollection", features: land });
-      proj.translate([proj.translate()[0] + 4, proj.translate()[1] - y0 + 6]);
-      this.H = Math.ceil(y1 - y0 + 12);
-      svg.setAttribute("viewBox", `0 0 ${this.W} ${this.H}`);
-      let html = `<g id="vp"><path class="sea" d="${path({ type: "Sphere" })}"/>`;
-      for (const f of land) {
-        const k = f.properties.name;
-        if (k === "Antarctica") continue;
-        // label anchor: centroid of the largest piece (keeps France on France, not French Guiana)
-        let g = f.geometry;
-        if (g.type === "MultiPolygon") {
-          let best = null, ba = -1;
-          for (const p of g.coordinates) { const a = path.area({ type: "Polygon", coordinates: p }); if (a > ba) { ba = a; best = p; } }
-          g = { type: "Polygon", coordinates: best };
-        }
-        this.pos[k] = path.centroid(g);
-        this.feats[k] = true;
-        html += `<path class="land" data-k="${esc(k)}" d="${path(f)}"/>`;
+      this.W = m.w; this.H = m.h;
+      svg.setAttribute("viewBox", `0 0 ${m.w} ${m.h}`);
+      let html = `<g id="vp"><rect class="sea" width="${m.w}" height="${m.h}"/>`;
+      for (const [k, s] of Object.entries(m.shapes)) {
+        this.pos[k] = s.c; // centroid of the largest piece (France on France, not French Guiana)
+        html += `<path class="land" data-k="${esc(k)}" d="${s.d}"/>`;
       }
-      for (const [k, ll] of Object.entries(geo.points)) if (!this.pos[k]) this.pos[k] = proj(ll);
+      for (const [k, p] of Object.entries(m.points)) if (!this.pos[k]) this.pos[k] = p;
       html += `<g id="bub"></g></g>`;
       svg.innerHTML = html;
       this.bindZoom(svg);
