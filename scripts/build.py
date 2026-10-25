@@ -85,7 +85,7 @@ def main():
             types[s["type"]] += 1
             for country, cont, label in s["loc"]:
                 continents[cont] += 1
-                countries.setdefault(country, label)
+                countries.setdefault(country, Counter())[label] += 1
         events.sort(key=lambda x: (x["y"] if x["y"] is not None else 0))
         (OUT / "d" / f"{d}.json").write_text(
             json.dumps({"date": d, "events": events}, ensure_ascii=False, separators=(",", ":")),
@@ -101,7 +101,8 @@ def main():
         "counts": counts,
         "types": {k: {"zh": TYPE_ZH.get(k, k), "n": n} for k, n in types.most_common()},
         "continents": {k: CONTINENT_ZH.get(k, k) for k, _ in continents.most_common() if k},
-        "countries": dict(sorted(countries.items(), key=lambda kv: kv[0] or "")),
+        # Chinese country name = the most common location label (labels can carry a city, e.g. "法国巴黎")
+        "countries": {k: v.most_common(1)[0][0] for k, v in sorted(countries.items(), key=lambda kv: kv[0] or "")},
     }
     (OUT / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), "utf-8")
 

@@ -97,7 +97,7 @@
         if (cont && !seenC.has(cont)) { cc[cont] = (cc[cont] || 0) + 1; seenC.add(cont); }
         if (country) {
           const k = keyOf(country);
-          if (!kc[k]) kc[k] = { n: 0, label, en: country, seen: null };
+          if (!kc[k]) kc[k] = { n: 0, label: meta?.countries?.[country] || label, en: country, seen: null };
           if (kc[k].seen !== e) { kc[k].n++; kc[k].seen = e; }
         }
       }
@@ -218,9 +218,14 @@
     },
     draw(atlas) {
       const svg = $("#map");
-      const proj = d3.geoNaturalEarth1().fitExtent([[4, 4], [this.W - 4, this.H - 4]], { type: "Sphere" });
+      const land = topojson.feature(atlas, atlas.objects.countries).features.filter(f => f.properties.name !== "Antarctica");
+      // fit to the land (not the whole globe) so there is no empty band where Antarctica would be
+      const proj = d3.geoNaturalEarth1().fitWidth(this.W - 8, { type: "FeatureCollection", features: land });
       const path = d3.geoPath(proj);
-      const land = topojson.feature(atlas, atlas.objects.countries).features;
+      const [[, y0], [, y1]] = path.bounds({ type: "FeatureCollection", features: land });
+      proj.translate([proj.translate()[0] + 4, proj.translate()[1] - y0 + 6]);
+      this.H = Math.ceil(y1 - y0 + 12);
+      svg.setAttribute("viewBox", `0 0 ${this.W} ${this.H}`);
       let html = `<g id="vp"><path class="sea" d="${path({ type: "Sphere" })}"/>`;
       for (const f of land) {
         const k = f.properties.name;
@@ -309,7 +314,9 @@
         const p = this.svgPt(svg, e.clientX, e.clientY);
         this.zoomAt(Math.exp(-e.deltaY * 0.0022), p.x, p.y);
       }, { passive: false });
+      let downEl = null;
       svg.addEventListener("pointerdown", e => {
+        downEl = e.target.closest?.("[data-k]") || null;
         ptrs.set(e.pointerId, e); moved = false; last = this.svgPt(svg, e.clientX, e.clientY);
         if (ptrs.size === 2) {
           const [a, b] = [...ptrs.values()];
@@ -338,7 +345,7 @@
       svg.addEventListener("pointerup", e => {
         end(e);
         if (moved) return;
-        const el = document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-k]");
+        const el = downEl;
         if (!el || !(this.c || {})[el.dataset.k]) return;
         state.country = state.country === el.dataset.k ? "" : el.dataset.k;
         state.cont = ""; state.shown = PAGE; buildFilters(); render();
