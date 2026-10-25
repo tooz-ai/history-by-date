@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>历史上的今天 · 存档</title>
+<meta name="description" content="按日期浏览世界历史事件，中英对照，每条附维基百科来源。数据以 CC BY-SA 许可存档自 historybydate.com。">
+<meta name="theme-color" content="#1f4e5f">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-row">
+    <a class="brand" href="./" aria-label="回到今天">
+      <span class="brand-mark" aria-hidden="true">日</span>
+      <span class="brand-text"><b data-i18n="brand">历史上的今天</b><small data-i18n="brandSub">存档版 · 中英对照</small></span>
+    </a>
+    <div class="lang" role="group" aria-label="语言">
+      <button data-lang="zh">中文</button>
+      <button data-lang="both">双语</button>
+      <button data-lang="en">EN</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="datebar" aria-label="选择日期">
+    <button class="icon-btn" id="prev" aria-label="前一天">‹</button>
+    <div class="date-center">
+      <h1 id="dateTitle">—</h1>
+      <div class="date-pickers">
+        <select id="month" aria-label="月"></select>
+        <select id="day" aria-label="日"></select>
+        <button class="chip-btn" id="today" data-i18n="today">今天</button>
+        <button class="chip-btn" id="openCal" data-i18n="allDates">全部日期</button>
+        <button class="chip-btn" id="random" data-i18n="random">随机一天</button>
+      </div>
+    </div>
+    <button class="icon-btn" id="next" aria-label="后一天">›</button>
+  </section>
+
+  <section class="filters" aria-label="筛选">
+    <div class="chips" id="typeChips"></div>
+    <div class="filter-row">
+      <input id="q" type="search" placeholder="在这一天里搜索…" data-i18n-ph="search">
+      <select id="continent"></select>
+      <select id="country"></select>
+      <select id="sort">
+        <option value="asc" data-i18n="oldFirst">年代：从早到晚</option>
+        <option value="desc" data-i18n="newFirst">年代：从晚到早</option>
+      </select>
+    </div>
+    <p class="stat" id="stat"></p>
+  </section>
+
+  <section id="timeline" class="timeline" aria-live="polite"></section>
+  <button id="more" class="more" hidden data-i18n="more">显示更多</button>
+</main>
+
+<dialog id="cal">
+  <div class="cal-head">
+    <h2 data-i18n="allDates">全部日期</h2>
+    <button class="icon-btn" id="closeCal" aria-label="关闭">×</button>
+  </div>
+  <div id="calBody" class="cal-body"></div>
+</dialog>
+
+<footer class="foot">
+  <div class="wrap">
+    <p data-i18n="foot1">事件文字来自维基百科及其编辑摘录，保留每条的修订版本与许可。中文由 AI 辅助翻译，未经人工审校，每条均附英文原文。</p>
+    <p>数据存档自 <a href="https://historybydate.com/" rel="noopener">historybydate.com</a>（编辑内容 <a href="https://creativecommons.org/licenses/by-sa/4.0/" rel="noopener">CC BY-SA 4.0</a>；摘录按各条注明的 CC BY-SA 3.0 / 4.0；部分地理数据 GeoNames <a href="https://creativecommons.org/licenses/by/4.0/" rel="noopener">CC BY 4.0</a>）。本站为个人存档，独立于该网站与维基媒体基金会。本站数据同样以 CC BY-SA 4.0 发布。</p>
+    <p class="muted" id="metaLine"></p>
+  </div>
+</footer>
+<script src="app.js"></script>
+</body>
+</html>
