@@ -110,7 +110,9 @@ def main():
     for src in RAW.rglob("*.json"):
         dst = RAWGZ / src.relative_to(RAW).with_suffix(".json.gz")
         dst.parent.mkdir(parents=True, exist_ok=True)
-        with open(src, "rb") as fi, gzip.open(dst, "wb", compresslevel=9) as fo:
+        # mtime=0 keeps the .gz byte-identical between builds, so git only sees real changes
+        with open(src, "rb") as fi, open(dst, "wb") as raw, \
+                gzip.GzipFile(filename="", mode="wb", compresslevel=9, fileobj=raw, mtime=0) as fo:
             shutil.copyfileobj(fi, fo)
 
     print(f"dates={len(counts)} events={total} missing_zh={missing_zh} types={len(types)} countries={len(countries)}")

@@ -414,8 +414,8 @@
 
   readHash();
   applyI18n();
-  fetch("data/meta.json").then(r => r.json()).then(m => { meta = m; footMeta(); buildFilters(); render(); }).catch(() => {});
-  fetch("data/geo.json").then(r => r.json()).catch(() => null).then(g => {
+  fetch("data/meta.json?v=3").then(r => r.json()).then(m => { meta = m; footMeta(); buildFilters(); render(); }).catch(() => {});
+  fetch("data/geo.json?v=3").then(r => r.json()).catch(() => null).then(g => {
     if (g) geo = g;
     loadDay().then(() => Map2.init());
   });
