@@ -67,14 +67,26 @@ def slim(e, z):
     return out
 
 
+def read_raw(lang, d):
+    """raw/ (fresh download) wins; otherwise fall back to the committed raw-gz/ archive."""
+    p = RAW / lang / f"{d}.json"
+    if p.exists():
+        return json.loads(p.read_text("utf-8"))
+    with gzip.open(RAWGZ / lang / f"{d}.json.gz", "rt", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
 def main():
     (OUT / "d").mkdir(parents=True, exist_ok=True)
     counts, types, continents, countries = {}, Counter(), Counter(), {}
     total = missing_zh = 0
-    for f in sorted((RAW / "en").glob("*.json")):
-        d = f.stem
-        en = json.loads(f.read_text("utf-8"))
-        zh = json.loads((RAW / "zh" / f.name).read_text("utf-8")).get("events", {})
+    use_raw = (RAW / "en").exists()
+    src_dir = RAW / "en" if use_raw else RAWGZ / "en"
+    print("reading", "raw/ (fresh download)" if use_raw else "raw-gz/ (archive in repo)")
+    for f in sorted(src_dir.glob("*.json*")):
+        d = f.name.split(".")[0]
+        en = read_raw("en", d)
+        zh = read_raw("zh", d).get("events", {})
         events = []
         for e in en["events"]:
             z = zh.get(e["id"])
@@ -106,8 +118,8 @@ def main():
     }
     (OUT / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), "utf-8")
 
-    # gzip copy of the complete raw archive
-    for src in RAW.rglob("*.json"):
+    # gzip copy of the complete raw archive (only when there is a fresh download in raw/)
+    for src in (RAW.rglob("*.json") if use_raw else []):
         dst = RAWGZ / src.relative_to(RAW).with_suffix(".json.gz")
         dst.parent.mkdir(parents=True, exist_ok=True)
         # mtime=0 keeps the .gz byte-identical between builds, so git only sees real changes
