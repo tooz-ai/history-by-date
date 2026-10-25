@@ -29,7 +29,9 @@
   };
   const state = { lang: store.get("lang", "both"), m: 1, d: 1, events: [], type: "", cont: "", country: "", q: "", sort: "asc", shown: PAGE };
   let meta = null;
+  let geo = { alias: {}, points: {} };
   const cache = new Map();
+  const keyOf = c => geo.alias[c] || c; // merge "United States" / "United States of America" etc.
 
   const ui = () => T[state.lang === "en" ? "en" : "zh"];
   const pad = n => String(n).padStart(2, "0");
@@ -93,7 +95,11 @@
       const seenC = new Set();
       for (const [country, cont, label] of e.loc) {
         if (cont && !seenC.has(cont)) { cc[cont] = (cc[cont] || 0) + 1; seenC.add(cont); }
-        if (country) kc[country] = kc[country] || { n: 0, label }, kc[country].n++;
+        if (country) {
+          const k = keyOf(country);
+          if (!kc[k]) kc[k] = { n: 0, label, en: country, seen: null };
+          if (kc[k].seen !== e) { kc[k].n++; kc[k].seen = e; }
+        }
       }
     }
     if (state.type && !tc[state.type]) state.type = "";
@@ -105,18 +111,19 @@
       types.map(([k, n]) => `<button class="chip${state.type === k ? " on" : ""}" data-type="${esc(k)}">${esc(typeLabel(k))}<small>${n}</small></button>`).join("");
     $("#continent").innerHTML = `<option value="">${t.allCont}</option>` +
       Object.entries(cc).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<option value="${esc(k)}"${state.cont === k ? " selected" : ""}>${esc(contLabel(k))} (${n})</option>`).join("");
-    const countries = Object.entries(kc).filter(([k]) => !state.cont || state.events.some(e => e.loc.some(l => l[0] === k && l[1] === state.cont)));
+    const countries = Object.entries(kc).filter(([k]) => !state.cont || state.events.some(e => e.loc.some(l => keyOf(l[0]) === k && l[1] === state.cont)));
     countries.sort((a, b) => b[1].n - a[1].n);
     $("#country").innerHTML = `<option value="">${t.allCountry}</option>` +
-      countries.map(([k, v]) => `<option value="${esc(k)}"${state.country === k ? " selected" : ""}>${esc(state.lang === "en" ? k : v.label || k)} (${v.n})</option>`).join("");
+      countries.map(([k, v]) => `<option value="${esc(k)}"${state.country === k ? " selected" : ""}>${esc(state.lang === "en" ? v.en : v.label || v.en)} (${v.n})</option>`).join("");
+    state.countryInfo = kc;
   }
 
-  function filtered() {
+  function filtered(skipCountry) {
     const q = state.q.trim().toLowerCase();
     let list = state.events.filter(e =>
       (!state.type || e.type === state.type) &&
       (!state.cont || e.loc.some(l => l[1] === state.cont)) &&
-      (!state.country || e.loc.some(l => l[0] === state.country)) &&
+      (skipCountry || !state.country || e.loc.some(l => keyOf(l[0]) === state.country)) &&
       (!q || [e.zh.t, e.zh.s, e.en.t, e.en.s, String(e.y)].some(s => s && String(s).toLowerCase().includes(q))));
     if (state.sort === "desc") list = list.slice().reverse();
     return list;
@@ -145,8 +152,8 @@
         <div lang="${state.lang === "en" ? "zh" : "en"}"><p><b>${esc(secondary.t)}</b></p><p>${esc(secondary.s)}</p></div></details>`;
     }
     const seen = new Set();
-    const locTags = e.loc.filter(l => l[0] && !seen.has(l[0]) && seen.add(l[0])).slice(0, 6)
-      .map(([c, , label]) => `<button class="tag" data-country="${esc(c)}">${esc(state.lang === "en" ? c : label || c)}</button>`).join("");
+    const locTags = e.loc.filter(l => l[0] && !seen.has(keyOf(l[0])) && seen.add(keyOf(l[0]))).slice(0, 6)
+      .map(([c, , label]) => `<button class="tag" data-country="${esc(keyOf(c))}">${esc(state.lang === "en" ? c : label || c)}</button>`).join("");
     const more = e.loc.length > 6 ? `<span class="tag">+${e.loc.length - 6}</span>` : "";
     body += `<div class="tags"><button class="tag type" data-type="${esc(e.type)}">${esc(typeLabel(e.type))}</button>${locTags}${more}</div>`;
     const licUrl = /3\.0/.test(e.lic) ? "https://creativecommons.org/licenses/by-sa/3.0/" : "https://creativecommons.org/licenses/by-sa/4.0/";
@@ -157,6 +164,7 @@
   function render() {
     const list = filtered();
     const t = ui();
+    Map2.update();
     $("#stat").textContent = t.stat(list.length, state.events.length);
     if (!list.length) { $("#timeline").innerHTML = `<p class="empty">${t.empty}</p>`; $("#more").hidden = true; return; }
     $("#timeline").innerHTML = list.slice(0, state.shown).map(card).join("");
@@ -186,6 +194,176 @@
       return `<div class="month"><h3>${state.lang === "en" ? MONTH_EN[i] : m + "月"}</h3><div class="days">${days}</div></div>`;
     }).join("");
   }
+
+  // ---------- world map ----------
+  // Libraries and the Natural Earth 1:110m atlas load from jsDelivr after the list
+  // is shown. If they fail, the map card stays hidden and the rest still works.
+  const CDN = "https://cdn.jsdelivr.net/npm/";
+  const loadScript = src => new Promise((ok, no) => {
+    const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = no; document.head.appendChild(s);
+  });
+  const Map2 = {
+    ready: false, feats: {}, pos: {}, z: { k: 1, x: 0, y: 0 }, W: 960, H: 500,
+    async init() {
+      try {
+        await loadScript(CDN + "d3-array@3.2.4/dist/d3-array.min.js");
+        await loadScript(CDN + "d3-geo@3.1.1/dist/d3-geo.min.js");
+        await loadScript(CDN + "topojson-client@3.1.0/dist/topojson-client.min.js");
+        const atlas = await (await fetch(CDN + "world-atlas@2.0.2/countries-110m.json")).json();
+        this.draw(atlas);
+        this.ready = true;
+        $("#mapcard").hidden = false;
+        this.update();
+      } catch (e) { /* map is optional */ }
+    },
+    draw(atlas) {
+      const svg = $("#map");
+      const proj = d3.geoNaturalEarth1().fitExtent([[4, 4], [this.W - 4, this.H - 4]], { type: "Sphere" });
+      const path = d3.geoPath(proj);
+      const land = topojson.feature(atlas, atlas.objects.countries).features;
+      let html = `<g id="vp"><path class="sea" d="${path({ type: "Sphere" })}"/>`;
+      for (const f of land) {
+        const k = f.properties.name;
+        if (k === "Antarctica") continue;
+        // label anchor: centroid of the largest piece (keeps France on France, not French Guiana)
+        let g = f.geometry;
+        if (g.type === "MultiPolygon") {
+          let best = null, ba = -1;
+          for (const p of g.coordinates) { const a = path.area({ type: "Polygon", coordinates: p }); if (a > ba) { ba = a; best = p; } }
+          g = { type: "Polygon", coordinates: best };
+        }
+        this.pos[k] = path.centroid(g);
+        this.feats[k] = true;
+        html += `<path class="land" data-k="${esc(k)}" d="${path(f)}"/>`;
+      }
+      for (const [k, ll] of Object.entries(geo.points)) if (!this.pos[k]) this.pos[k] = proj(ll);
+      html += `<g id="bub"></g></g>`;
+      svg.innerHTML = html;
+      this.bindZoom(svg);
+    },
+    counts() {
+      const c = {}; let none = 0;
+      for (const e of filtered(true)) {
+        const ks = new Set(e.loc.map(l => keyOf(l[0])).filter(k => this.pos[k]));
+        if (!ks.size) none++;
+        ks.forEach(k => c[k] = (c[k] || 0) + 1);
+      }
+      return { c, none };
+    },
+    label(k) {
+      const info = state.countryInfo?.[k];
+      if (info) return state.lang === "en" ? info.en : info.label || info.en;
+      return k;
+    },
+    update() {
+      if (!this.ready) return;
+      const { c, none } = this.counts();
+      this.c = c;
+      const max = Math.max(1, ...Object.values(c));
+      document.querySelectorAll("#map .land").forEach(p => {
+        const n = c[p.dataset.k] || 0;
+        p.classList.toggle("has", n > 0);
+        p.classList.toggle("sel", state.country === p.dataset.k);
+        p.style.fillOpacity = n ? (0.18 + 0.62 * Math.sqrt(n / max)).toFixed(2) : "";
+      });
+      this.drawBubbles();
+      const t = state.lang === "en";
+      const sel = state.country ? `<button class="chip on" id="mapClear">${esc(this.label(state.country))} ✕</button>` : "";
+      $("#mapNote").innerHTML = `${sel}<span>${t ? "Tap a country to filter" : "点国家即可筛选"}${none ? (t ? ` · ${none} events without a place` : ` · ${none} 条没有具体地点`) : ""}</span>`;
+    },
+    drawBubbles() {
+      const k = this.z.k, c = this.c || {};
+      const max = Math.max(1, ...Object.values(c));
+      const items = Object.entries(c).sort((a, b) => b[1] - a[1]);
+      $("#bub").innerHTML = items.map(([key, n]) => {
+        const [x, y] = this.pos[key];
+        const r = (3.5 + 11 * Math.sqrt(n / max)) / Math.sqrt(k);
+        const showN = r * k >= 8;
+        return `<g class="b${state.country === key ? " sel" : ""}" data-k="${esc(key)}"><circle cx="${x}" cy="${y}" r="${r}"/>` +
+          (showN ? `<text x="${x}" y="${y}" font-size="${(r * 0.95).toFixed(2)}">${n}</text>` : "") + `</g>`;
+      }).join("");
+    },
+    apply() {
+      const { k, x, y } = this.z;
+      $("#vp").setAttribute("transform", `translate(${x},${y}) scale(${k})`);
+      this.drawBubbles();
+    },
+    zoomAt(f, px, py) {
+      const z = this.z, k = Math.min(16, Math.max(1, z.k * f)), r = k / z.k;
+      z.x = px - (px - z.x) * r; z.y = py - (py - z.y) * r; z.k = k;
+      this.clamp(); this.apply();
+    },
+    clamp() {
+      const z = this.z;
+      z.x = Math.min(0, Math.max(this.W - this.W * z.k, z.x));
+      z.y = Math.min(0, Math.max(this.H - this.H * z.k, z.y));
+    },
+    svgPt(svg, cx, cy) {
+      const p = svg.createSVGPoint(); p.x = cx; p.y = cy;
+      return p.matrixTransform(svg.getScreenCTM().inverse());
+    },
+    bindZoom(svg) {
+      const ptrs = new Map(); let moved = false, last = null, pinch = null;
+      svg.addEventListener("wheel", e => {
+        e.preventDefault();
+        const p = this.svgPt(svg, e.clientX, e.clientY);
+        this.zoomAt(Math.exp(-e.deltaY * 0.0022), p.x, p.y);
+      }, { passive: false });
+      svg.addEventListener("pointerdown", e => {
+        ptrs.set(e.pointerId, e); moved = false; last = this.svgPt(svg, e.clientX, e.clientY);
+        if (ptrs.size === 2) {
+          const [a, b] = [...ptrs.values()];
+          pinch = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) };
+        }
+      });
+      svg.addEventListener("pointermove", e => {
+        if (!ptrs.has(e.pointerId)) { this.hover(e); return; }
+        ptrs.set(e.pointerId, e);
+        if (ptrs.size === 2 && pinch) {
+          const [a, b] = [...ptrs.values()];
+          const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+          const m = this.svgPt(svg, (a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2);
+          this.zoomAt(d / pinch.d, m.x, m.y); pinch.d = d; moved = true; return;
+        }
+        const p = this.svgPt(svg, e.clientX, e.clientY);
+        const dx = p.x - last.x, dy = p.y - last.y;
+        if (Math.abs(dx) + Math.abs(dy) > 2) moved = true;
+        if (moved && this.z.k > 1) {
+          svg.setPointerCapture(e.pointerId);
+          this.z.x += dx; this.z.y += dy; this.clamp(); this.apply();
+          last = this.svgPt(svg, e.clientX, e.clientY);
+        }
+      });
+      const end = e => { ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null; };
+      svg.addEventListener("pointerup", e => {
+        end(e);
+        if (moved) return;
+        const el = document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-k]");
+        if (!el || !(this.c || {})[el.dataset.k]) return;
+        state.country = state.country === el.dataset.k ? "" : el.dataset.k;
+        state.cont = ""; state.shown = PAGE; buildFilters(); render();
+      });
+      svg.addEventListener("pointercancel", end);
+      svg.addEventListener("pointerleave", () => { $("#mapTip").hidden = true; });
+      $("#zin").onclick = () => this.zoomAt(1.6, this.W / 2, this.H / 2);
+      $("#zout").onclick = () => this.zoomAt(1 / 1.6, this.W / 2, this.H / 2);
+      $("#zreset").onclick = () => { this.z = { k: 1, x: 0, y: 0 }; this.apply(); };
+      $("#mapNote").addEventListener("click", e => {
+        if (e.target.closest("#mapClear")) { state.country = ""; state.shown = PAGE; buildFilters(); render(); }
+      });
+    },
+    hover(e) {
+      const tip = $("#mapTip");
+      const el = e.target.closest?.("[data-k]");
+      const n = el && (this.c || {})[el.dataset.k];
+      if (!n) { tip.hidden = true; return; }
+      const box = $("#mapWrap").getBoundingClientRect();
+      tip.textContent = state.lang === "en" ? `${this.label(el.dataset.k)} · ${n}` : `${this.label(el.dataset.k)} · ${n} 条`;
+      tip.style.left = `${e.clientX - box.left + 12}px`;
+      tip.style.top = `${e.clientY - box.top + 12}px`;
+      tip.hidden = false;
+    },
+  };
 
   // events
   document.querySelector(".lang").addEventListener("click", e => {
@@ -230,5 +408,8 @@
   readHash();
   applyI18n();
   fetch("data/meta.json").then(r => r.json()).then(m => { meta = m; footMeta(); buildFilters(); render(); }).catch(() => {});
-  loadDay();
+  fetch("data/geo.json").then(r => r.json()).catch(() => null).then(g => {
+    if (g) geo = g;
+    loadDay().then(() => Map2.init());
+  });
 })();

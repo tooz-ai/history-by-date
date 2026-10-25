@@ -40,6 +40,19 @@
     <button class="icon-btn" id="next" aria-label="后一天">›</button>
   </section>
 
+  <section class="mapcard" id="mapcard" hidden aria-label="地图">
+    <div class="map-wrap" id="mapWrap">
+      <svg id="map" viewBox="0 0 960 500" role="img" aria-label="世界地图"></svg>
+      <div class="map-ctrl">
+        <button class="icon-btn sm" id="zin" aria-label="放大">+</button>
+        <button class="icon-btn sm" id="zout" aria-label="缩小">−</button>
+        <button class="icon-btn sm" id="zreset" aria-label="重置视图">⟲</button>
+      </div>
+      <div class="map-tip" id="mapTip" hidden></div>
+    </div>
+    <p class="map-note" id="mapNote"></p>
+  </section>
+
   <section class="filters" aria-label="筛选">
     <div class="chips" id="typeChips"></div>
     <div class="filter-row">
